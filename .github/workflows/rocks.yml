@@ -105,9 +105,12 @@ jobs:
                   event.respondWith(
                       (async () => {
                           try {
-                              // Extract repo path - remove .png and split
-                              const cleanPath = path.replace(/\.png$/, '');
+                              // Remove .png extension first
+                              let cleanPath = path.replace(/\.png$/, '');
+                              // Remove leading slash and split
                               const parts = cleanPath.split('/').filter(p => p);
+                              
+                              console.log('Path parts:', parts);
                               
                               // Need at least: /github-repo/namespace/project
                               if (parts.length < 3) {
@@ -131,25 +134,26 @@ jobs:
                               const cached = await cache.match(event.request);
                               if (cached) return cached;
                               
-                              // Fetch project - NOTE: no .png here!
+                              // Fetch project from GitLab API
                               const encodedPath = encodeURIComponent(repoPath);
                               const projectUrl = `https://gitlab.com/api/v4/projects/${encodedPath}`;
                               console.log('API URL:', projectUrl);
                               
                               const projectRes = await fetch(projectUrl);
                               if (!projectRes.ok) {
-                                  console.error('Project not found:', projectRes.status);
-                                  return new Response('Project not found', { 
+                                  const errorText = await projectRes.text();
+                                  console.error('Project not found:', projectRes.status, errorText);
+                                  return new Response(`Project not found: ${repoPath}`, { 
                                       status: 404,
                                       headers: { 'Content-Type': 'text/plain' }
                                   });
                               }
                               
-                              const project = await projectRes.json();
-                              console.log('Project found:', project.path_with_namespace);
+                              const projectData = await projectRes.json();
+                              console.log('Project found:', projectData.path_with_namespace);
                               
                               // Fetch contributors
-                              const contribUrl = `https://gitlab.com/api/v4/projects/${project.id}/repository/contributors`;
+                              const contribUrl = `https://gitlab.com/api/v4/projects/${projectData.id}/repository/contributors`;
                               const contribRes = await fetch(contribUrl);
                               if (!contribRes.ok) {
                                   return new Response('Failed to fetch contributors', { 
@@ -255,7 +259,9 @@ jobs:
                   
                   async function load() {
                       const path = window.location.pathname;
-                      const parts = path.split('/').filter(p => p);
+                      // Remove .png if present for the HTML page logic
+                      const cleanPath = path.replace(/\.png$/, '');
+                      const parts = cleanPath.split('/').filter(p => p);
                       
                       if (parts.length < 3) {
                           document.getElementById('loading').style.display = 'none';
@@ -276,9 +282,9 @@ jobs:
                           const projectRes = await fetch(projectUrl);
                           if (!projectRes.ok) throw new Error('Project not found: ' + repoPath);
                           
-                          const project = await projectRes.json();
+                          const projectData = await projectRes.json();
                           
-                          const contribUrl = `https://gitlab.com/api/v4/projects/${project.id}/repository/contributors`;
+                          const contribUrl = `https://gitlab.com/api/v4/projects/${projectData.id}/repository/contributors`;
                           const contribRes = await fetch(contribUrl);
                           if (!contribRes.ok) throw new Error('Failed to fetch contributors');
                           
@@ -295,7 +301,7 @@ jobs:
                           const pngUrl = `/${parts[0]}/${repoPath}.png`;
                           
                           let html = `
-                              <h2>${project.path_with_namespace}</h2>
+                              <h2>${projectData.path_with_namespace}</h2>
                               <p>${contributors.length} contributors</p>
                               <a href="${pngUrl}" class="png-link" target="_blank">📥 Direct PNG Image</a>
                               <br>
