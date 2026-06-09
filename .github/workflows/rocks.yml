@@ -1,10 +1,14 @@
-name: Deploy Dynamic GitLab Contributors Page
+name: Generate Contributors Images
 
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
   workflow_dispatch:
+    inputs:
+      repos:
+        description: 'Comma-separated list of repos (username/repo)'
+        required: false
+        default: 'walfie308/lint'
 
 permissions:
   contents: write
@@ -12,7 +16,7 @@ permissions:
   id-token: write
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -22,468 +26,164 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create 404.html (catches all routes)
-        run: |
-          cat > 404.html << 'HTML'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>GitLab Contributors</title>
-              <style>
-                  * {
-                      margin: 0;
-                      padding: 0;
-                      box-sizing: border-box;
-                  }
-                  
-                  body {
-                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                      min-height: 100vh;
-                      padding: 20px;
-                      display: flex;
-                      align-items: center;
-                      justify-content: center;
-                  }
-                  
-                  .container {
-                      max-width: 1200px;
-                      margin: 0 auto;
-                      width: 100%;
-                  }
-                  
-                  h1 {
-                      color: white;
-                      text-align: center;
-                      margin-bottom: 10px;
-                      font-size: 2.5em;
-                      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-                  }
-                  
-                  .repo-info {
-                      color: rgba(255,255,255,0.9);
-                      text-align: center;
-                      margin-bottom: 30px;
-                      font-size: 1.2em;
-                  }
-                  
-                  .loading {
-                      text-align: center;
-                      color: white;
-                      font-size: 1.5em;
-                      padding: 50px;
-                  }
-                  
-                  .spinner {
-                      border: 4px solid rgba(255,255,255,0.3);
-                      border-top: 4px solid white;
-                      border-radius: 50%;
-                      width: 40px;
-                      height: 40px;
-                      animation: spin 1s linear infinite;
-                      margin: 20px auto;
-                  }
-                  
-                  @keyframes spin {
-                      0% { transform: rotate(0deg); }
-                      100% { transform: rotate(360deg); }
-                  }
-                  
-                  .contributors-grid {
-                      display: grid;
-                      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-                      gap: 20px;
-                      padding: 20px;
-                  }
-                  
-                  .contributor-card {
-                      background: white;
-                      border-radius: 15px;
-                      padding: 25px;
-                      text-align: center;
-                      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-                      transition: transform 0.3s ease;
-                  }
-                  
-                  .contributor-card:hover {
-                      transform: translateY(-5px);
-                  }
-                  
-                  .contributor-avatar {
-                      width: 100px;
-                      height: 100px;
-                      border-radius: 50%;
-                      border: 4px solid #667eea;
-                      margin-bottom: 15px;
-                  }
-                  
-                  .contributor-name {
-                      font-size: 1.2em;
-                      font-weight: bold;
-                      color: #333;
-                      margin-bottom: 10px;
-                      word-break: break-word;
-                  }
-                  
-                  .contributor-stats {
-                      display: flex;
-                      justify-content: space-around;
-                      margin-top: 15px;
-                      padding-top: 15px;
-                      border-top: 1px solid #eee;
-                  }
-                  
-                  .stat {
-                      text-align: center;
-                  }
-                  
-                  .stat-number {
-                      font-size: 1.3em;
-                      font-weight: bold;
-                      color: #667eea;
-                  }
-                  
-                  .stat-label {
-                      font-size: 0.8em;
-                      color: #666;
-                      text-transform: uppercase;
-                  }
-                  
-                  .error {
-                      background: white;
-                      color: #e74c3c;
-                      padding: 20px;
-                      border-radius: 10px;
-                      text-align: center;
-                      margin: 20px;
-                      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-                  }
-                  
-                  .repo-selector {
-                      background: white;
-                      border-radius: 10px;
-                      padding: 20px;
-                      margin: 20px;
-                      text-align: center;
-                      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-                  }
-                  
-                  .repo-input {
-                      display: flex;
-                      gap: 10px;
-                      max-width: 500px;
-                      margin: 20px auto;
-                  }
-                  
-                  .repo-input input {
-                      flex: 1;
-                      padding: 10px 15px;
-                      border: 2px solid #667eea;
-                      border-radius: 8px;
-                      font-size: 1em;
-                  }
-                  
-                  .repo-input button {
-                      padding: 10px 20px;
-                      background: #667eea;
-                      color: white;
-                      border: none;
-                      border-radius: 8px;
-                      cursor: pointer;
-                      font-size: 1em;
-                      transition: background 0.3s;
-                  }
-                  
-                  .repo-input button:hover {
-                      background: #5a67d8;
-                  }
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-                  canvas {
-                      display: none;
-                  }
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests Pillow
+
+      - name: Generate contributor images
+        env:
+          REPO_LIST: ${{ github.event.inputs.repos || 'walfie308/lint' }}
+        run: |
+          python << 'PYEOF'
+          import os
+          import hashlib
+          import requests
+          from PIL import Image, ImageDraw
+          from io import BytesIO
+          import json
+          from pathlib import Path
+
+          def get_gravatar_url(email, size=80):
+              if not email:
+                  return f"https://www.gravatar.com/avatar/?d=identicon&s={size}"
+              clean = email.lower().strip()
+              # Create a hash for Gravatar-style identicon
+              hash_val = hashlib.md5(clean.encode()).hexdigest()
+              return f"https://www.gravatar.com/avatar/{hash_val}?d=identicon&s={size}"
+
+          def create_contributors_png(contributors, output_path):
+              avatar_size = 80
+              padding = 4
+              cols = min(10, len(contributors))
+              rows = (len(contributors) + cols - 1) // cols
+              
+              img_width = cols * (avatar_size + padding) + padding
+              img_height = rows * (avatar_size + padding) + padding
+              
+              # Create transparent image
+              image = Image.new('RGBA', (img_width, img_height), (0, 0, 0, 0))
+              
+              for idx, contributor in enumerate(contributors):
+                  email = contributor.get('email', '')
+                  avatar_url = get_gravatar_url(email, avatar_size)
                   
-                  #pngOutput {
-                      display: none;
-                  }
+                  try:
+                      response = requests.get(avatar_url, timeout=10)
+                      if response.status_code == 200:
+                          avatar = Image.open(BytesIO(response.content))
+                          avatar = avatar.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+                          
+                          # Create circular mask
+                          mask = Image.new('L', (avatar_size, avatar_size), 0)
+                          draw = ImageDraw.Draw(mask)
+                          draw.ellipse((0, 0, avatar_size, avatar_size), fill=255)
+                          
+                          # Apply mask to avatar
+                          avatar.putalpha(mask)
+                          
+                          col = idx % cols
+                          row = idx // cols
+                          x = padding + col * (avatar_size + padding)
+                          y = padding + row * (avatar_size + padding)
+                          
+                          image.paste(avatar, (x, y), avatar)
+                  except Exception as e:
+                      print(f"Failed to load avatar for {contributor.get('name')}: {e}")
+              
+              # Ensure directory exists
+              os.makedirs(os.path.dirname(output_path), exist_ok=True)
+              image.save(output_path, 'PNG')
+              print(f"Saved: {output_path} ({len(contributors)} contributors)")
+
+          def process_repo(repo_path):
+              print(f"\nProcessing: {repo_path}")
+              
+              try:
+                  # Get project info
+                  encoded = requests.utils.quote(repo_path, safe='')
+                  project_url = f"https://gitlab.com/api/v4/projects/{encoded}"
+                  project_response = requests.get(project_url, timeout=10)
+                  
+                  if project_response.status_code != 200:
+                      print(f"Project not found: {repo_path}")
+                      return
+                  
+                  project = project_response.json()
+                  project_id = project['id']
+                  
+                  # Get contributors
+                  contributors_url = f"https://gitlab.com/api/v4/projects/{project_id}/repository/contributors"
+                  contributors_response = requests.get(contributors_url, timeout=10)
+                  
+                  if contributors_response.status_code != 200:
+                      print(f"Failed to get contributors for {repo_path}")
+                      return
+                  
+                  contributors = contributors_response.json()
+                  
+                  if not contributors:
+                      print(f"No contributors for {repo_path}")
+                      return
+                  
+                  # Generate PNG
+                  png_path = f"public/{repo_path}.png"
+                  create_contributors_png(contributors, png_path)
+                  
+                  # Also save JSON data
+                  json_path = f"public/{repo_path}.json"
+                  os.makedirs(os.path.dirname(json_path), exist_ok=True)
+                  with open(json_path, 'w') as f:
+                      json.dump(contributors, f, indent=2)
+                  
+                  # Create directory listing
+                  dir_path = os.path.dirname(png_path)
+                  index_path = f"public/{repo_path}/index.html"
+                  os.makedirs(os.path.dirname(index_path), exist_ok=True)
+                  
+                  with open(index_path, 'w') as f:
+                      f.write(f'''<!DOCTYPE html>
+          <html>
+          <head>
+              <title>{repo_path} - Contributors</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <style>
+                  body {{ font-family: sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }}
+                  img {{ max-width: 100%; height: auto; }}
+                  a {{ color: #666eea; }}
               </style>
           </head>
           <body>
-              <div class="container">
-                  <h1>GitLab Contributors</h1>
-                  <div class="repo-info" id="repoInfo"></div>
-                  
-                  <div class="repo-selector">
-                      <h3>Enter GitLab Repository Path</h3>
-                      <div class="repo-input">
-                          <input type="text" id="repoPath" placeholder="username/repository" value="">
-                          <button onclick="loadRepoFromInput()">Load Contributors</button>
-                      </div>
-                      <small style="color: #666;">Example: walfie308/lint</small>
-                  </div>
-                  
-                  <div class="loading" id="loading" style="display: none;">
-                      <div class="spinner"></div>
-                      Loading contributors...
-                  </div>
-                  
-                  <div class="error" id="error" style="display: none;"></div>
-                  
-                  <div id="content"></div>
-              </div>
-              
-              <canvas id="canvas"></canvas>
-              <img id="pngOutput" alt="Generated PNG">
-              
-              <script>
-                  // Get Gravatar URL from email
-                  function getGravatarUrl(email, size = 100) {
-                      if (!email) return `https://www.gravatar.com/avatar/?d=identicon&s=${size}`;
-                      const cleanEmail = email.toLowerCase().trim();
-                      const hash = btoa(cleanEmail).replace(/[+/=]/g, '');
-                      return `https://www.gravatar.com/avatar/${hash}?d=identicon&s=${size}`;
-                  }
-                  
-                  // Extract repo path from URL
-                  function getRepoPathFromURL() {
-                      const path = window.location.pathname;
-                      const parts = path.split('/').filter(p => p && p !== '404.html');
-                      
-                      if (parts.length >= 3) {
-                          const namespace = parts[1];
-                          const project = parts[2];
-                          return `${namespace}/${project}`;
-                      }
-                      return null;
-                  }
-                  
-                  // Check if URL ends with .png
-                  function isPNGRequest() {
-                      return window.location.pathname.endsWith('.png');
-                  }
-                  
-                  // Load repo from input
-                  function loadRepoFromInput() {
-                      const repoPath = document.getElementById('repoPath').value.trim();
-                      if (repoPath) {
-                          const newURL = `/${window.location.pathname.split('/')[1]}/${repoPath}`;
-                          window.history.pushState({}, '', newURL);
-                          loadRepo(repoPath);
-                      }
-                  }
-                  
-                  // Load image and return promise
-                  function loadImage(url) {
-                      return new Promise((resolve, reject) => {
-                          const img = new Image();
-                          img.crossOrigin = 'anonymous';
-                          img.onload = () => resolve(img);
-                          img.onerror = reject;
-                          img.src = url;
-                      });
-                  }
-                  
-                  // Generate PNG grid
-                  async function generatePNG(contributors) {
-                      const canvas = document.getElementById('canvas');
-                      const ctx = canvas.getContext('2d');
-                      
-                      const avatarSize = 80;
-                      const padding = 4;
-                      const cols = Math.min(10, contributors.length);
-                      const rows = Math.ceil(contributors.length / cols);
-                      
-                      canvas.width = cols * (avatarSize + padding) + padding;
-                      canvas.height = rows * (avatarSize + padding) + padding;
-                      
-                      // Make background transparent
-                      ctx.clearRect(0, 0, canvas.width, canvas.height);
-                      
-                      // Load and draw all avatars
-                      const images = await Promise.allSettled(
-                          contributors.map(c => loadImage(getGravatarUrl(c.email, avatarSize)))
-                      );
-                      
-                      images.forEach((result, index) => {
-                          if (result.status === 'fulfilled') {
-                              const img = result.value;
-                              const col = index % cols;
-                              const row = Math.floor(index / cols);
-                              const x = padding + col * (avatarSize + padding);
-                              const y = padding + row * (avatarSize + padding);
-                              
-                              // Draw circular avatar
-                              ctx.save();
-                              ctx.beginPath();
-                              ctx.arc(x + avatarSize/2, y + avatarSize/2, avatarSize/2, 0, Math.PI * 2);
-                              ctx.closePath();
-                              ctx.clip();
-                              ctx.drawImage(img, x, y, avatarSize, avatarSize);
-                              ctx.restore();
-                          }
-                      });
-                      
-                      return canvas.toDataURL('image/png');
-                  }
-                  
-                  // Load repo data
-                  async function loadRepo(repoPath) {
-                      if (!repoPath) {
-                          repoPath = getRepoPathFromURL();
-                          if (!repoPath) return;
-                      }
-                      
-                      if (repoPath.endsWith('.png')) {
-                          repoPath = repoPath.replace('.png', '');
-                      }
-                      
-                      document.getElementById('repoPath').value = repoPath;
-                      
-                      showLoading(true);
-                      hideError();
-                      document.getElementById('content').innerHTML = '';
-                      
-                      try {
-                          const encodedPath = encodeURIComponent(repoPath);
-                          const projectURL = `https://gitlab.com/api/v4/projects/${encodedPath}`;
-                          
-                          const projectResponse = await fetch(projectURL);
-                          
-                          if (!projectResponse.ok) {
-                              throw new Error(`Project not found: ${repoPath}`);
-                          }
-                          
-                          const project = await projectResponse.json();
-                          
-                          document.getElementById('repoInfo').textContent = 
-                              `Showing contributors for: ${project.path_with_namespace}`;
-                          
-                          const contributorsURL = `https://gitlab.com/api/v4/projects/${project.id}/repository/contributors`;
-                          const contributorsResponse = await fetch(contributorsURL);
-                          
-                          if (!contributorsResponse.ok) {
-                              throw new Error('Failed to fetch contributors');
-                          }
-                          
-                          const contributors = await contributorsResponse.json();
-                          
-                          if (!contributors || contributors.length === 0) {
-                              showError('No contributors found for this project');
-                              showLoading(false);
-                              return;
-                          }
-                          
-                          // If PNG was requested
-                          if (isPNGRequest()) {
-                              const pngData = await generatePNG(contributors);
-                              
-                              // Display the PNG
-                              document.getElementById('content').innerHTML = `
-                                  <div style="background: white; border-radius: 15px; padding: 20px; margin: 20px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
-                                      <h2 style="margin-bottom: 20px; color: #333;">${contributors.length} Contributors</h2>
-                                      <img src="${pngData}" alt="Contributors Grid" style="max-width: 100%; height: auto; border-radius: 10px;">
-                                      <br><br>
-                                      <a href="${pngData}" download="${repoPath.replace('/', '_')}_contributors.png" 
-                                         style="display: inline-block; padding: 10px 20px; background: #667eea; color: white; text-decoration: none; border-radius: 8px; margin-top: 10px;">
-                                          Download PNG
-                                      </a>
-                                  </div>
-                              `;
-                          } else {
-                              // Display HTML view
-                              const contributorsWithAvatars = contributors.map(c => ({
-                                  ...c,
-                                  avatar_url: getGravatarUrl(c.email, 100),
-                                  web_url: c.email ? `https://gitlab.com/${c.email.split('@')[0]}` : '#'
-                              }));
-                              
-                              displayHTMLView(contributorsWithAvatars, project);
-                          }
-                          
-                      } catch (error) {
-                          console.error('Error:', error);
-                          showError(error.message || 'Failed to load contributors');
-                      } finally {
-                          showLoading(false);
-                      }
-                  }
-                  
-                  function displayHTMLView(contributors, project) {
-                      const content = document.getElementById('content');
-                      
-                      content.innerHTML = `
-                          <div class="contributors-grid">
-                              ${contributors.map(c => `
-                                  <div class="contributor-card">
-                                      <a href="${c.web_url}" target="_blank">
-                                          <img src="${c.avatar_url}" alt="${c.name}" class="contributor-avatar">
-                                      </a>
-                                      <div class="contributor-name">${c.name || 'Unknown'}</div>
-                                      <div class="contributor-stats">
-                                          <div class="stat">
-                                              <div class="stat-number">${c.commits}</div>
-                                              <div class="stat-label">Commits</div>
-                                          </div>
-                                          <div class="stat">
-                                              <div class="stat-number">+${c.additions || 0}</div>
-                                              <div class="stat-label">Additions</div>
-                                          </div>
-                                          <div class="stat">
-                                              <div class="stat-number">-${c.deletions || 0}</div>
-                                              <div class="stat-label">Deletions</div>
-                                          </div>
-                                      </div>
-                                  </div>
-                              `).join('')}
-                          </div>
-                      `;
-                  }
-                  
-                  function showLoading(show) {
-                      document.getElementById('loading').style.display = show ? 'block' : 'none';
-                  }
-                  
-                  function showError(message) {
-                      const errorDiv = document.getElementById('error');
-                      errorDiv.textContent = message;
-                      errorDiv.style.display = 'block';
-                  }
-                  
-                  function hideError() {
-                      document.getElementById('error').style.display = 'none';
-                  }
-                  
-                  // Handle Enter key
-                  document.getElementById('repoPath').addEventListener('keypress', function(e) {
-                      if (e.key === 'Enter') loadRepoFromInput();
-                  });
-                  
-                  // Load on page load
-                  window.addEventListener('load', function() {
-                      const repoPath = getRepoPathFromURL();
-                      if (repoPath) {
-                          document.getElementById('repoPath').value = repoPath.replace('.png', '');
-                          loadRepo(repoPath);
-                      }
-                  });
-                  
-                  // Handle back/forward
-                  window.addEventListener('popstate', function() {
-                      const repoPath = getRepoPathFromURL();
-                      if (repoPath) {
-                          document.getElementById('repoPath').value = repoPath.replace('.png', '');
-                          loadRepo(repoPath);
-                      }
-                  });
-              </script>
+              <h1>{repo_path}</h1>
+              <p>{len(contributors)} contributors</p>
+              <img src="../{repo_path.split('/')[-1]}.png" alt="Contributors">
+              <br><br>
+              <a href="../{repo_path.split('/')[-1]}.png">Direct image link</a> |
+              <a href="../{repo_path.split('/')[-1]}.json">JSON data</a>
           </body>
-          </html>
-          HTML
+          </html>''')
+                  
+              except Exception as e:
+                  print(f"Error processing {repo_path}: {e}")
 
-      - name: Create index.html (redirects to 404.html for routing)
+          # Get list of repos to process
+          repo_list = os.environ.get('REPO_LIST', 'walfie308/lint')
+          repos = [r.strip() for r in repo_list.split(',') if r.strip()]
+          
+          for repo in repos:
+              process_repo(repo)
+          
+          print("\nDone generating all images!")
+          PYEOF
+
+      - name: Create index.html with proxy
         run: |
-          cat > index.html << 'HTML'
+          cat > public/index.html << 'HTML'
           <!DOCTYPE html>
           <html>
           <head>
@@ -492,49 +192,53 @@ jobs:
               <style>
                   * { margin: 0; padding: 0; box-sizing: border-box; }
                   body {
-                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                       min-height: 100vh;
                       display: flex;
                       align-items: center;
                       justify-content: center;
                   }
-                  .container { text-align: center; color: white; }
+                  .container { text-align: center; color: white; padding: 20px; }
+                  h1 { font-size: 3em; margin-bottom: 20px; }
                   input {
-                      padding: 15px 20px;
-                      font-size: 1.2em;
-                      border: none;
-                      border-radius: 10px;
-                      width: 300px;
-                      margin-right: 10px;
+                      padding: 15px 20px; font-size: 1.2em; border: none;
+                      border-radius: 10px; width: 300px; margin-right: 10px;
                   }
                   button {
-                      padding: 15px 30px;
-                      font-size: 1.2em;
-                      background: white;
-                      color: #667eea;
-                      border: none;
-                      border-radius: 10px;
-                      cursor: pointer;
-                      font-weight: bold;
+                      padding: 15px 30px; font-size: 1.2em; background: white;
+                      color: #667eea; border: none; border-radius: 10px;
+                      cursor: pointer; font-weight: bold;
                   }
                   button:hover { background: #f0f0f0; }
+                  .examples { margin-top: 30px; }
+                  .examples a { color: white; margin: 0 10px; }
               </style>
           </head>
           <body>
               <div class="container">
-                  <h1 style="font-size: 3em; margin-bottom: 20px;">GitLab Contributors</h1>
-                  <p style="font-size: 1.2em; margin-bottom: 30px;">Enter a GitLab repository to see contributors</p>
+                  <h1>GitLab Contributors</h1>
+                  <p style="font-size: 1.2em; margin-bottom: 30px;">
+                      Get contributor images for any GitLab repo
+                  </p>
                   <div>
                       <input type="text" id="repoPath" placeholder="username/repository">
-                      <button onclick="go()">View Contributors</button>
+                      <button onclick="go()">View</button>
                   </div>
-                  <p style="margin-top: 20px; opacity: 0.8;">Example: walfie308/lint</p>
+                  <div class="examples">
+                      <p style="margin: 20px 0;">Usage:</p>
+                      <code style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; display: inline-block;">
+                          /username/repo.png
+                      </code>
+                      <p style="margin-top: 10px; opacity: 0.8;">Example: /walfie308/lint.png</p>
+                  </div>
               </div>
               <script>
                   function go() {
                       const path = document.getElementById('repoPath').value.trim();
-                      if (path) window.location.href = '/' + path;
+                      if (path) {
+                          window.location.href = '/' + path + '.png';
+                      }
                   }
                   document.getElementById('repoPath').addEventListener('keypress', function(e) {
                       if (e.key === 'Enter') go();
@@ -550,7 +254,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: 'public'
 
       - name: Deploy to GitHub Pages
         id: deployment
