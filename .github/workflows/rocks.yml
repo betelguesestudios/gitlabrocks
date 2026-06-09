@@ -1,1 +1,455 @@
+name: Deploy Dynamic GitLab Contributors Page
 
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create index.html
+        run: |
+          cat > index.html << 'HTML'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>GitLab Contributors</title>
+              <style>
+                  * {
+                      margin: 0;
+                      padding: 0;
+                      box-sizing: border-box;
+                  }
+                  
+                  body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      min-height: 100vh;
+                      padding: 20px;
+                  }
+                  
+                  .container {
+                      max-width: 1200px;
+                      margin: 0 auto;
+                  }
+                  
+                  h1 {
+                      color: white;
+                      text-align: center;
+                      margin-bottom: 10px;
+                      font-size: 2.5em;
+                      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+                  }
+                  
+                  .repo-info {
+                      color: rgba(255,255,255,0.9);
+                      text-align: center;
+                      margin-bottom: 30px;
+                      font-size: 1.2em;
+                  }
+                  
+                  .loading {
+                      text-align: center;
+                      color: white;
+                      font-size: 1.5em;
+                      padding: 50px;
+                  }
+                  
+                  .spinner {
+                      border: 4px solid rgba(255,255,255,0.3);
+                      border-top: 4px solid white;
+                      border-radius: 50%;
+                      width: 40px;
+                      height: 40px;
+                      animation: spin 1s linear infinite;
+                      margin: 20px auto;
+                  }
+                  
+                  @keyframes spin {
+                      0% { transform: rotate(0deg); }
+                      100% { transform: rotate(360deg); }
+                  }
+                  
+                  .contributors-grid {
+                      display: grid;
+                      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                      gap: 20px;
+                      padding: 20px;
+                  }
+                  
+                  .contributor-card {
+                      background: white;
+                      border-radius: 15px;
+                      padding: 25px;
+                      text-align: center;
+                      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                      transition: transform 0.3s ease;
+                  }
+                  
+                  .contributor-card:hover {
+                      transform: translateY(-5px);
+                  }
+                  
+                  .contributor-avatar {
+                      width: 100px;
+                      height: 100px;
+                      border-radius: 50%;
+                      border: 4px solid #667eea;
+                      margin-bottom: 15px;
+                  }
+                  
+                  .contributor-name {
+                      font-size: 1.2em;
+                      font-weight: bold;
+                      color: #333;
+                      margin-bottom: 10px;
+                      word-break: break-word;
+                  }
+                  
+                  .contributor-stats {
+                      display: flex;
+                      justify-content: space-around;
+                      margin-top: 15px;
+                      padding-top: 15px;
+                      border-top: 1px solid #eee;
+                  }
+                  
+                  .stat {
+                      text-align: center;
+                  }
+                  
+                  .stat-number {
+                      font-size: 1.3em;
+                      font-weight: bold;
+                      color: #667eea;
+                  }
+                  
+                  .stat-label {
+                      font-size: 0.8em;
+                      color: #666;
+                      text-transform: uppercase;
+                  }
+                  
+                  .error {
+                      background: white;
+                      color: #e74c3c;
+                      padding: 20px;
+                      border-radius: 10px;
+                      text-align: center;
+                      margin: 20px;
+                      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+                  }
+                  
+                  .contributors-image {
+                      background: white;
+                      border-radius: 15px;
+                      padding: 20px;
+                      margin: 20px;
+                      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                      overflow: hidden;
+                  }
+                  
+                  .contributors-image img {
+                      max-width: 100%;
+                      height: auto;
+                      border-radius: 10px;
+                  }
+                  
+                  .repo-selector {
+                      background: white;
+                      border-radius: 10px;
+                      padding: 20px;
+                      margin: 20px;
+                      text-align: center;
+                      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+                  }
+                  
+                  .repo-input {
+                      display: flex;
+                      gap: 10px;
+                      max-width: 500px;
+                      margin: 20px auto;
+                  }
+                  
+                  .repo-input input {
+                      flex: 1;
+                      padding: 10px 15px;
+                      border: 2px solid #667eea;
+                      border-radius: 8px;
+                      font-size: 1em;
+                  }
+                  
+                  .repo-input button {
+                      padding: 10px 20px;
+                      background: #667eea;
+                      color: white;
+                      border: none;
+                      border-radius: 8px;
+                      cursor: pointer;
+                      font-size: 1em;
+                      transition: background 0.3s;
+                  }
+                  
+                  .repo-input button:hover {
+                      background: #5a67d8;
+                  }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>GitLab Contributors</h1>
+                  <div class="repo-info" id="repoInfo"></div>
+                  
+                  <div class="repo-selector">
+                      <h3>Enter GitLab Repository Path</h3>
+                      <div class="repo-input">
+                          <input type="text" id="repoPath" placeholder="username/repository" value="">
+                          <button onclick="loadRepo()">Load Contributors</button>
+                      </div>
+                      <small style="color: #666;">Example: walfie308/lint</small>
+                  </div>
+                  
+                  <div class="loading" id="loading" style="display: none;">
+                      <div class="spinner"></div>
+                      Loading contributors...
+                  </div>
+                  
+                  <div class="error" id="error" style="display: none;"></div>
+                  
+                  <div id="content"></div>
+              </div>
+              
+              <script>
+                  // Function to get repo path from URL or input
+                  function getRepoPathFromURL() {
+                      const path = window.location.pathname;
+                      // Remove leading/trailing slashes and the repo name if present
+                      const parts = path.split('/').filter(p => p);
+                      // If the URL structure is: /username/repo/namespace/project
+                      // Adjust this based on your GitHub Pages structure
+                      if (parts.length >= 2) {
+                          // Assuming the last two parts are namespace/project
+                          const namespace = parts[parts.length - 2];
+                          const project = parts[parts.length - 1];
+                          return `${namespace}/${project}`;
+                      }
+                      return null;
+                  }
+                  
+                  // Function to load contributors for a specific repo
+                  async function loadRepo(repoPath) {
+                      if (!repoPath) {
+                          repoPath = document.getElementById('repoPath').value.trim();
+                      }
+                      
+                      if (!repoPath) {
+                          showError('Please enter a repository path (username/repository)');
+                          return;
+                      }
+                      
+                      // Update URL without reloading
+                      const newURL = `${window.location.origin}${window.location.pathname.replace(/\/$/, '')}/${repoPath}`;
+                      window.history.pushState({}, '', newURL);
+                      
+                      showLoading(true);
+                      hideError();
+                      document.getElementById('content').innerHTML = '';
+                      
+                      try {
+                          // URL encode the project path for GitLab API
+                          const encodedPath = encodeURIComponent(repoPath);
+                          
+                          // First, search for the project to get its ID
+                          const searchURL = `https://gitlab.com/api/v4/projects?search=${encodedPath}&per_page=5`;
+                          const searchResponse = await fetch(searchURL);
+                          const projects = await searchResponse.json();
+                          
+                          if (!projects || projects.length === 0) {
+                              throw new Error(`No GitLab project found for "${repoPath}"`);
+                          }
+                          
+                          // Find the exact matching project
+                          const project = projects.find(p => p.path_with_namespace === repoPath) || projects[0];
+                          const projectId = project.id;
+                          
+                          document.getElementById('repoInfo').textContent = 
+                              `Showing contributors for: ${project.path_with_namespace}`;
+                          
+                          // Fetch contributors
+                          const contributorsURL = `https://gitlab.com/api/v4/projects/${projectId}/repository/contributors`;
+                          const contributorsResponse = await fetch(contributorsURL);
+                          const contributors = await contributorsResponse.json();
+                          
+                          if (!contributors || contributors.length === 0) {
+                              throw new Error('No contributors found for this project');
+                          }
+                          
+                          // Get avatars for contributors
+                          const contributorsWithAvatars = await Promise.all(
+                              contributors.map(async (contributor) => {
+                                  try {
+                                      // Try to find user by email or name
+                                      if (contributor.email) {
+                                          const username = contributor.email.split('@')[0];
+                                          const userURL = `https://gitlab.com/api/v4/users?username=${username}`;
+                                          const userResponse = await fetch(userURL);
+                                          const users = await userResponse.json();
+                                          
+                                          if (users && users.length > 0) {
+                                              return {
+                                                  ...contributor,
+                                                  avatar_url: users[0].avatar_url,
+                                                  web_url: users[0].web_url
+                                              };
+                                          }
+                                      }
+                                      
+                                      // If no avatar found, use default
+                                      return {
+                                          ...contributor,
+                                          avatar_url: `https://www.gravatar.com/avatar/?d=identicon&s=100`,
+                                          web_url: '#'
+                                      };
+                                  } catch {
+                                      return {
+                                          ...contributor,
+                                          avatar_url: `https://www.gravatar.com/avatar/?d=identicon&s=100`,
+                                          web_url: '#'
+                                      };
+                                  }
+                              })
+                          );
+                          
+                          // Display contributors
+                          displayContributors(contributorsWithAvatars, project);
+                          
+                      } catch (error) {
+                          showError(error.message || 'Failed to load contributors. Please check the repository path.');
+                      } finally {
+                          showLoading(false);
+                      }
+                  }
+                  
+                  function displayContributors(contributors, project) {
+                      const content = document.getElementById('content');
+                      
+                      // Create composite image view
+                      const compositeHTML = `
+                          <div class="contributors-image">
+                              <h2 style="text-align: center; margin-bottom: 20px; color: #333;">
+                                  ${contributors.length} Contributors
+                              </h2>
+                              <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 20px;">
+                                  ${contributors.slice(0, 30).map(c => `
+                                      <a href="${c.web_url}" target="_blank" title="${c.name} - ${c.commits} commits">
+                                          <img src="${c.avatar_url}" 
+                                               alt="${c.name}" 
+                                               style="width: 60px; height: 60px; border-radius: 50%; border: 3px solid #667eea; transition: transform 0.3s;"
+                                               onmouseover="this.style.transform='scale(1.1)'"
+                                               onmouseout="this.style.transform='scale(1)'">
+                                      </a>
+                                  `).join('')}
+                              </div>
+                          </div>
+                          
+                          <h2 style="text-align: center; color: white; margin: 30px 0 20px;">Top Contributors</h2>
+                          <div class="contributors-grid">
+                              ${contributors.map(c => `
+                                  <div class="contributor-card">
+                                      <a href="${c.web_url}" target="_blank">
+                                          <img src="${c.avatar_url}" alt="${c.name}" class="contributor-avatar">
+                                      </a>
+                                      <div class="contributor-name">${c.name || 'Unknown'}</div>
+                                      <div class="contributor-stats">
+                                          <div class="stat">
+                                              <div class="stat-number">${c.commits}</div>
+                                              <div class="stat-label">Commits</div>
+                                          </div>
+                                          <div class="stat">
+                                              <div class="stat-number">+${c.additions || 0}</div>
+                                              <div class="stat-label">Additions</div>
+                                          </div>
+                                          <div class="stat">
+                                              <div class="stat-number">-${c.deletions || 0}</div>
+                                              <div class="stat-label">Deletions</div>
+                                          </div>
+                                      </div>
+                                  </div>
+                              `).join('')}
+                          </div>
+                      `;
+                      
+                      content.innerHTML = compositeHTML;
+                  }
+                  
+                  function showLoading(show) {
+                      document.getElementById('loading').style.display = show ? 'block' : 'none';
+                  }
+                  
+                  function showError(message) {
+                      const errorDiv = document.getElementById('error');
+                      errorDiv.textContent = message;
+                      errorDiv.style.display = 'block';
+                  }
+                  
+                  function hideError() {
+                      document.getElementById('error').style.display = 'none';
+                  }
+                  
+                  // Handle Enter key in input
+                  document.getElementById('repoPath').addEventListener('keypress', function(e) {
+                      if (e.key === 'Enter') {
+                          loadRepo();
+                      }
+                  });
+                  
+                  // Check URL on page load
+                  window.addEventListener('load', function() {
+                      const repoPath = getRepoPathFromURL();
+                      if (repoPath) {
+                          document.getElementById('repoPath').value = repoPath;
+                          loadRepo(repoPath);
+                      }
+                  });
+                  
+                  // Handle browser back/forward buttons
+                  window.addEventListener('popstate', function() {
+                      const repoPath = getRepoPathFromURL();
+                      if (repoPath) {
+                          document.getElementById('repoPath').value = repoPath;
+                          loadRepo(repoPath);
+                      }
+                  });
+              </script>
+          </body>
+          </html>
+          HTML
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
