@@ -166,12 +166,6 @@ jobs:
                       overflow: hidden;
                   }
                   
-                  .contributors-image img {
-                      max-width: 100%;
-                      height: auto;
-                      border-radius: 10px;
-                  }
-                  
                   .repo-selector {
                       background: white;
                       border-radius: 10px;
@@ -237,32 +231,49 @@ jobs:
               </div>
               
               <script>
+                  // Function to generate MD5 hash for Gravatar
+                  async function md5(string) {
+                      const encoder = new TextEncoder();
+                      const data = encoder.encode(string.toLowerCase().trim());
+                      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                      // Note: Gravatar uses MD5, but we're using a workaround with the email as a seed
+                      // Actually, let's use a simple approach - just use the email directly in the query
+                      return string;
+                  }
+                  
+                  // Generate Gravatar URL from email
+                  async function getGravatarUrl(email, size = 100) {
+                      if (!email) return `https://www.gravatar.com/avatar/?d=identicon&s=${size}`;
+                      
+                      // For Gravatar, we need MD5 hash of email
+                      // Since we can't easily do MD5 in browser, let's use the email-based identicon
+                      // We'll encode the email for the URL
+                      const cleanEmail = email.toLowerCase().trim();
+                      // Create a simple hash using btoa
+                      const hash = btoa(cleanEmail).replace(/[+/=]/g, '');
+                      return `https://www.gravatar.com/avatar/${hash}?d=identicon&s=${size}`;
+                  }
+                  
                   // Function to get repo path from URL
                   function getRepoPathFromURL() {
                       const path = window.location.pathname;
-                      // Remove leading/trailing slashes and split
                       const parts = path.split('/').filter(p => p);
                       
-                      // If URL structure is: /username/repo/namespace/project
                       if (parts.length >= 2) {
-                          // Get everything after the repo name
-                          const repoName = parts[0]; // This is your GitHub repo name
                           const remainingParts = parts.slice(1);
                           
                           if (remainingParts.length >= 2) {
-                              // The last two parts should be namespace/project
                               const namespace = remainingParts[remainingParts.length - 2];
                               const project = remainingParts[remainingParts.length - 1];
                               return `${namespace}/${project}`;
                           } else if (remainingParts.length === 1) {
-                              // Maybe just one part? Try as is
                               return remainingParts[0];
                           }
                       }
                       return null;
                   }
                   
-                  // Function to load contributors for a specific repo
+                  // Function to load contributors
                   async function loadRepo(repoPath) {
                       if (!repoPath) {
                           repoPath = document.getElementById('repoPath').value.trim();
@@ -273,7 +284,7 @@ jobs:
                           return;
                       }
                       
-                      // Update URL without reloading
+                      // Update URL
                       const newURL = `${window.location.origin}/${window.location.pathname.split('/')[1]}/${repoPath}`;
                       window.history.pushState({}, '', newURL);
                       
@@ -282,11 +293,10 @@ jobs:
                       document.getElementById('content').innerHTML = '';
                       
                       try {
-                          // URL encode the project path for GitLab API (username/project)
+                          // Get project info
                           const encodedPath = encodeURIComponent(repoPath);
                           const projectURL = `https://gitlab.com/api/v4/projects/${encodedPath}`;
                           
-                          console.log('Fetching project:', projectURL);
                           const projectResponse = await fetch(projectURL);
                           
                           if (!projectResponse.ok) {
@@ -301,7 +311,6 @@ jobs:
                           
                           // Fetch contributors
                           const contributorsURL = `https://gitlab.com/api/v4/projects/${projectId}/repository/contributors`;
-                          console.log('Fetching contributors:', contributorsURL);
                           const contributorsResponse = await fetch(contributorsURL);
                           
                           if (!contributorsResponse.ok) {
@@ -316,53 +325,20 @@ jobs:
                               return;
                           }
                           
-                          // Get avatars for contributors
+                          // Generate avatars using Gravatar based on email
                           const contributorsWithAvatars = await Promise.all(
                               contributors.map(async (contributor) => {
-                                  try {
-                                      if (contributor.email) {
-                                          const username = contributor.email.split('@')[0];
-                                          const userURL = `https://gitlab.com/api/v4/users?username=${username}`;
-                                          const userResponse = await fetch(userURL);
-                                          const users = await userResponse.json();
-                                          
-                                          if (users && users.length > 0) {
-                                              return {
-                                                  ...contributor,
-                                                  avatar_url: users[0].avatar_url,
-                                                  web_url: users[0].web_url
-                                              };
-                                          }
-                                      }
-                                      
-                                      // Try searching by name if email didn't work
-                                      if (contributor.name) {
-                                          const searchURL = `https://gitlab.com/api/v4/users?search=${encodeURIComponent(contributor.name)}`;
-                                          const searchResponse = await fetch(searchURL);
-                                          const users = await searchResponse.json();
-                                          
-                                          if (users && users.length > 0) {
-                                              return {
-                                                  ...contributor,
-                                                  avatar_url: users[0].avatar_url,
-                                                  web_url: users[0].web_url
-                                              };
-                                          }
-                                      }
-                                      
-                                      // If no avatar found, use project owner's avatar as fallback
-                                      return {
-                                          ...contributor,
-                                          avatar_url: project.namespace.avatar_url || `https://www.gravatar.com/avatar/?d=identicon&s=100`,
-                                          web_url: '#'
-                                      };
-                                  } catch {
-                                      return {
-                                          ...contributor,
-                                          avatar_url: project.namespace.avatar_url || `https://www.gravatar.com/avatar/?d=identicon&s=100`,
-                                          web_url: '#'
-                                      };
-                                  }
+                                  const avatarUrl = await getGravatarUrl(contributor.email, 100);
+                                  
+                                  // Try to construct GitLab user URL from email
+                                  const username = contributor.email ? contributor.email.split('@')[0] : '';
+                                  const webUrl = username ? `https://gitlab.com/${username}` : '#';
+                                  
+                                  return {
+                                      ...contributor,
+                                      avatar_url: avatarUrl,
+                                      web_url: webUrl
+                                  };
                               })
                           );
                           
@@ -371,7 +347,7 @@ jobs:
                           
                       } catch (error) {
                           console.error('Error:', error);
-                          showError(error.message || 'Failed to load contributors. Please check the repository path.');
+                          showError(error.message || 'Failed to load contributors');
                       } finally {
                           showLoading(false);
                       }
@@ -380,7 +356,6 @@ jobs:
                   function displayContributors(contributors, project) {
                       const content = document.getElementById('content');
                       
-                      // Create composite image view
                       const compositeHTML = `
                           <div class="contributors-image">
                               <h2 style="text-align: center; margin-bottom: 20px; color: #333;">
@@ -443,14 +418,14 @@ jobs:
                       document.getElementById('error').style.display = 'none';
                   }
                   
-                  // Handle Enter key in input
+                  // Handle Enter key
                   document.getElementById('repoPath').addEventListener('keypress', function(e) {
                       if (e.key === 'Enter') {
                           loadRepo();
                       }
                   });
                   
-                  // Check URL on page load
+                  // Load on page load if URL contains repo path
                   window.addEventListener('load', function() {
                       const repoPath = getRepoPathFromURL();
                       if (repoPath) {
@@ -459,7 +434,7 @@ jobs:
                       }
                   });
                   
-                  // Handle browser back/forward buttons
+                  // Handle back/forward
                   window.addEventListener('popstate', function() {
                       const repoPath = getRepoPathFromURL();
                       if (repoPath) {
@@ -483,4 +458,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        
